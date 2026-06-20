@@ -350,6 +350,23 @@
 </head>
 <body>
 
+<!-- 알림 권한 요청 팝업 -->
+<div id="notif-popup" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);align-items:flex-end">
+  <div style="background:#1c1c28;border-radius:20px 20px 0 0;padding:28px 24px calc(28px + env(safe-area-inset-bottom));width:100%">
+    <div style="font-size:40px;text-align:center;margin-bottom:12px">🔔</div>
+    <div style="font-size:19px;font-weight:700;text-align:center;margin-bottom:8px">보스 출현 알림 설정</div>
+    <div style="font-size:14px;color:#8888a0;text-align:center;line-height:1.6;margin-bottom:24px">
+      보스 출현 전 푸시 알림을 받으려면<br>알림 권한이 필요합니다
+    </div>
+    <button onclick="allowNotif()" style="width:100%;padding:16px;border-radius:14px;border:none;background:#e67e22;color:white;font-size:16px;font-weight:700;margin-bottom:10px;cursor:pointer">
+      ✅ 알림 허용하기
+    </button>
+    <button onclick="denyNotif()" style="width:100%;padding:14px;border-radius:14px;border:none;background:#2a2a3a;color:#8888a0;font-size:14px;cursor:pointer">
+      나중에 하기
+    </button>
+  </div>
+</div>
+
 <!-- 탭 페이지들 -->
 <div id="page-fixed" class="page active">
   <div class="header">
@@ -376,20 +393,6 @@
 <div id="page-settings" class="page">
   <div class="header"><h1>⚙️ 설정</h1></div>
   <div style="padding:12px 12px 90px">
-
-    <div class="settings-section">
-      <div class="settings-label">시간대 설정</div>
-      <div class="settings-row">
-        <span class="settings-row-label">📍 현재 위치 시간대</span>
-        <select id="timezone-select" onchange="updateTimezone(this.value)">
-          <option value="KST">🇰🇷 한국 (KST)</option>
-          <option value="CST">🇨🇳 중국 (CST)</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <span class="settings-row-label" style="font-size:12px;color:var(--text2)">보스 출현 시간은 KST 기준입니다.<br>중국 선택 시 자동으로 -1시간 적용됩니다.</span>
-      </div>
-    </div>
 
     <div class="settings-section">
       <div class="settings-label">알림 시간</div>
@@ -603,7 +606,6 @@ const RANDOM_BOSSES = [
 // ══════════════════════════════════════════════════════════════
 let STATE = loadState();
 let alertMinutes = parseInt(localStorage.getItem('alertMinutes') || '10');
-let timezone = localStorage.getItem('timezone') || 'KST'; // 'KST' or 'CST'
 let currentDetailBoss = null;
 let currentSheetBossId = null;
 let currentTab = 'fixed';
@@ -1091,16 +1093,6 @@ function updateAlertMinutes(val) {
   showToast(`⏰ 알림 시간: 출현 ${alertMinutes}분 전`);
 }
 
-function updateTimezone(val) {
-  timezone = val;
-  localStorage.setItem('timezone', val);
-  renderFixed();
-  renderRandom();
-  rescheduleAll();
-  // UTC 기반 계산이므로 기기 시간대에 맞게 자동 표시됨
-  showToast(val === 'CST' ? '🇨🇳 중국 시간 기준으로 표시됩니다' : '🇰🇷 한국 시간 기준으로 표시됩니다');
-}
-
 function updateSettingsUI() {
   const all = [...FIXED_BOSSES, ...RANDOM_BOSSES];
   const cnt = all.filter(b => getState(b.id).notif).length;
@@ -1110,8 +1102,6 @@ function updateSettingsUI() {
   if (bc) bc.textContent = `${all.length}개`;
   const am = document.getElementById('alert-minutes');
   if (am) am.value = alertMinutes;
-  const tz = document.getElementById('timezone-select');
-  if (tz) tz.value = timezone;
   // 알림 권한 상태 표시
   const ps = document.getElementById('notif-permission-status');
   if (ps) {
@@ -1136,12 +1126,28 @@ function showToast(msg) {
 // ══════════════════════════════════════════════════════════════
 // 초기화
 // ══════════════════════════════════════════════════════════════
+async function allowNotif() {
+  document.getElementById('notif-popup').style.display = 'none';
+  const result = await Notification.requestPermission();
+  if (result === 'granted') {
+    showToast('✅ 알림이 허용되었습니다!');
+    updateSettingsUI();
+    rescheduleAll();
+  } else {
+    showToast('❌ 알림이 거부되었습니다. 설정 앱에서 허용해 주세요.');
+  }
+}
+
+function denyNotif() {
+  document.getElementById('notif-popup').style.display = 'none';
+  localStorage.setItem('notifAsked', 'true');
+}
+
 async function init() {
   // SW 등록
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/LineageM-BOSS/sw.js').catch(() => {});
   }
-  // iOS: 자동 권한 요청 안 함 - 🔔 버튼 클릭 시 요청
   autoResetCheck();
   renderFixed();
   renderRandom();
@@ -1149,6 +1155,18 @@ async function init() {
   rescheduleAll();
   setInterval(tick, 1000);
   setInterval(autoResetCheck, 60000);
+
+  // 알림 권한 팝업: 권한이 없고 이전에 거부하지 않은 경우 표시
+  // iOS는 반드시 사용자가 버튼을 눌러야 권한 요청 가능 → 팝업으로 유도
+  if ('Notification' in window && Notification.permission === 'default') {
+    const asked = localStorage.getItem('notifAsked');
+    if (!asked) {
+      // 약간의 딜레이 후 팝업 표시 (앱 로딩 후)
+      setTimeout(() => {
+        document.getElementById('notif-popup').style.display = 'flex';
+      }, 1500);
+    }
+  }
 }
 
 init();
