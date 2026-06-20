@@ -1021,7 +1021,7 @@ function showToast(msg) {
 async function init() {
   // SW 등록
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('/LineageM-BOSS/sw.js').catch(() => {});
   }
   await requestNotifPermission();
   autoResetCheck();
