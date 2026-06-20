@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="보스알람">
+<meta name="theme-color" content="#0a0a0f">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>리니지M 보스 알람</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #14141c;
+    --surface2: #1c1c28;
+    --border: #2a2a3a;
+    --red: #c0392b;
+    --red-dim: rgba(192,57,43,0.15);
+    --orange: #e67e22;
+    --orange-dim: rgba(230,126,34,0.15);
+    --purple: #8e44ad;
+    --gold: #f1c40f;
+    --text: #e8e8f0;
+    --text2: #8888a0;
+    --fire: #e74c3c;
+    --water: #3498db;
+    --wind: #2ecc71;
+    --earth: #d4a017;
+    --safe: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  /* ── 탭바 ── */
+  .tabs {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex;
+    background: rgba(14,14,20,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border);
+    padding-bottom: var(--safe);
+    z-index: 100;
+  }
+  .tab-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    gap: 3px; padding: 10px 0;
+    background: none; border: none; color: var(--text2);
+    font-size: 10px; cursor: pointer; transition: color .2s;
+  }
+  .tab-btn svg { width: 22px; height: 22px; }
+  .tab-btn.active { color: var(--orange); }
+
+  /* ── 헤더 ── */
+  .header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(10,10,15,0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 10px;
+  }
+  .header h1 {
+    font-size: 22px; font-weight: 700;
+    background: linear-gradient(135deg, var(--gold), var(--orange));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  .search-bar {
+    margin-top: 10px;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border-radius: 10px;
+    padding: 8px 12px;
+  }
+  .search-bar input {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-size: 14px;
+  }
+  .search-bar input::placeholder { color: var(--text2); }
+
+  /* ── 페이지 ── */
+  .page { display: none; padding: 12px 12px 90px; }
+  .page.active { display: block; }
+
+  /* ── 보스 카드 ── */
+  .boss-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: transform .1s;
+    cursor: pointer;
+  }
+  .boss-card:active { transform: scale(0.98); }
+  .boss-card.imminent { border-color: var(--red); background: linear-gradient(135deg, var(--surface), rgba(192,57,43,0.08)); }
+  .boss-card.imminent .timer { color: var(--red) !important; }
+
+  .card-main {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+  }
+  .weakness-icon {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .card-info { flex: 1; min-width: 0; }
+  .card-name {
+    font-size: 15px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-level { font-size: 11px; color: var(--text2); }
+  .card-loc {
+    font-size: 12px; color: var(--text2); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-right { text-align: right; flex-shrink: 0; }
+  .timer {
+    font-size: 16px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text); font-family: 'SF Mono', monospace;
+  }
+  .timer.spawned { color: var(--red) !important; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+
+  /* ── 알림 & 액션 버튼 ── */
+  .card-actions {
+    display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;
+  }
+  .icon-btn {
+    width: 28px; height: 24px; border-radius: 6px;
+    border: none; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity .15s;
+  }
+  .icon-btn:active { opacity: .7; }
+  .bell-btn { background: var(--orange-dim); color: var(--orange); }
+  .bell-btn.off { background: var(--surface2); color: var(--text2); }
+  .kill-btn { background: var(--red-dim); color: var(--red); }
+  .reset-btn { background: var(--surface2); color: var(--text2); }
+
+  .kill-time {
+    font-size: 11px; color: var(--orange); margin-top: 3px;
+  }
+
+  /* ── 상세 패널 ── */
+  .detail-panel {
+    position: fixed; inset: 0; z-index: 200;
+    background: var(--bg);
+    transform: translateX(100%);
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+    overflow-y: auto;
+    padding-bottom: calc(80px + var(--safe));
+  }
+  .detail-panel.open { transform: translateX(0); }
+
+  .detail-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 56px 16px 16px;
+    background: linear-gradient(180deg, rgba(139,26,26,0.3) 0%, transparent 100%);
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--surface2); border: none;
+    color: var(--text); cursor: pointer; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .detail-title { font-size: 24px; font-weight: 700; }
+
+  .detail-body { padding: 0 16px; }
+  .detail-timer-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 12px;
+  }
+  .detail-timer {
+    font-size: 52px; font-weight: 800;
+    font-family: 'SF Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(135deg, var(--gold), var(--orange));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .detail-timer.red {
+    background: linear-gradient(135deg, #ff4444, var(--red));
+    -webkit-background-clip: text;
+  }
+  .detail-next { font-size: 13px; color: var(--text2); margin-top: 6px; }
+
+  .info-grid {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; margin-bottom: 12px; overflow: hidden;
+  }
+  .info-row {
+    display: flex; padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { width: 80px; font-size: 13px; color: var(--text2); flex-shrink: 0; }
+  .info-value { font-size: 13px; font-weight: 500; }
+
+  .drops-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .drops-title { font-size: 13px; color: var(--text2); margin-bottom: 10px; }
+  .drop-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .drop-item:last-child { border-bottom: none; }
+  .drop-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .drop-name { font-size: 13px; flex: 1; }
+  .drop-name.hero { color: #e74c3c; }
+  .drop-name.legend { color: #9b59b6; }
+  .drop-grade {
+    font-size: 10px; padding: 2px 7px; border-radius: 20px;
+  }
+  .drop-grade.hero { background: rgba(231,76,60,.15); color: #e74c3c; }
+  .drop-grade.legend { background: rgba(155,89,182,.15); color: #9b59b6; }
+
+  .detail-actions { display: flex; gap: 10px; margin-bottom: 12px; }
+  .action-btn {
+    flex: 1; padding: 14px; border-radius: 14px; border: none;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .action-btn.primary { background: var(--red); color: white; }
+  .action-btn.secondary {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border);
+  }
+
+  .notif-toggle {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .notif-label { font-size: 14px; font-weight: 500; }
+  .notif-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .toggle-sw {
+    position: relative; width: 48px; height: 28px;
+    background: var(--border); border-radius: 14px;
+    cursor: pointer; transition: background .2s; flex-shrink: 0;
+  }
+  .toggle-sw.on { background: var(--orange); }
+  .toggle-sw::after {
+    content: ''; position: absolute;
+    top: 3px; left: 3px; width: 22px; height: 22px;
+    background: white; border-radius: 50%;
+    transition: transform .2s;
+  }
+  .toggle-sw.on::after { transform: translateX(20px); }
+
+  /* ── 처치 등록 시트 ── */
+  .sheet-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.6);
+    display: none; align-items: flex-end;
+  }
+  .sheet-overlay.open { display: flex; }
+  .sheet {
+    background: var(--surface);
+    border-radius: 20px 20px 0 0;
+    width: 100%; padding: 20px 20px calc(20px + var(--safe));
+  }
+  .sheet-handle {
+    width: 36px; height: 4px; background: var(--border);
+    border-radius: 2px; margin: 0 auto 16px;
+  }
+  .sheet-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .sheet-sub { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+  .time-input {
+    width: 100%; padding: 14px; border-radius: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 16px; outline: none;
+    color-scheme: dark;
+    margin-bottom: 12px;
+  }
+  .spawn-preview {
+    background: var(--surface2); border-radius: 12px;
+    padding: 14px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .spawn-preview-label { font-size: 12px; color: var(--text2); }
+  .spawn-preview-time { font-size: 18px; font-weight: 700; color: var(--orange); }
+  .sheet-btn {
+    width: 100%; padding: 15px; border-radius: 14px;
+    border: none; font-size: 16px; font-weight: 700;
+    cursor: pointer; margin-bottom: 8px;
+  }
+  .sheet-btn.primary { background: var(--red); color: white; }
+  .sheet-btn.cancel { background: var(--surface2); color: var(--text2); }
+
+  /* ── 설정 탭 ── */
+  .settings-section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; margin-bottom: 16px;
+  }
+  .settings-label {
+    font-size: 12px; color: var(--text2); text-transform: uppercase;
+    letter-spacing: .5px; padding: 16px 16px 6px;
+  }
+  .settings-row {
+    display: flex; align-items: center; padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row-label { flex: 1; font-size: 14px; }
+  .settings-row-value { font-size: 14px; color: var(--text2); }
+  select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 6px 10px;
+    font-size: 14px; outline: none;
+  }
+  .badge {
+    background: var(--orange); color: white;
+    font-size: 12px; font-weight: 700;
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .danger-btn {
+    width: 100%; padding: 14px; border-radius: 14px;
+    background: rgba(192,57,43,.15); border: 1px solid rgba(192,57,43,.3);
+    color: var(--red); font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* ── 알림 배너 ── */
+  .toast {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 18px;
+    font-size: 13px; white-space: nowrap; z-index: 500;
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── 빈 상태 ── */
+  .empty { text-align: center; padding: 60px 20px; color: var(--text2); font-size: 14px; }
+
+  /* 스크롤바 숨기기 */
+  ::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<!-- 탭 페이지들 -->
+<div id="page-fixed" class="page active">
+  <div class="header">
+    <h1>⚔️ 고정 시간 보스</h1>
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" placeholder="보스 이름 / 위치 검색" id="search-fixed" oninput="renderFixed()">
+    </div>
+  </div>
+  <div id="list-fixed"></div>
+</div>
+
+<div id="page-random" class="page">
+  <div class="header">
+    <h1>🎲 랜덤 보스</h1>
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" placeholder="보스 이름 / 위치 검색" id="search-random" oninput="renderRandom()">
+    </div>
+  </div>
+  <div id="list-random"></div>
+</div>
+
+<div id="page-settings" class="page">
+  <div class="header"><h1>⚙️ 설정</h1></div>
+  <div style="padding:12px 12px 90px">
+
+    <div class="settings-section">
+      <div class="settings-label">알림 시간</div>
+      <div class="settings-row">
+        <span class="settings-row-label">출현 N분 전 알림</span>
+        <select id="alert-minutes" onchange="updateAlertMinutes(this.value)">
+          <option value="3">3분 전</option>
+          <option value="5">5분 전</option>
+          <option value="10" selected>10분 전</option>
+          <option value="15">15분 전</option>
+          <option value="20">20분 전</option>
+          <option value="30">30분 전</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">알림 현황</div>
+      <div class="settings-row">
+        <span class="settings-row-label">활성 알림 보스</span>
+        <span class="badge" id="notif-count">0</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">고정 시간 보스</div>
+      <div class="settings-row" style="cursor:pointer" onclick="toggleAllNotif('fixed', true)">
+        <span class="settings-row-label">🔔 전체 알림 켜기</span>
+      </div>
+      <div class="settings-row" style="cursor:pointer" onclick="toggleAllNotif('fixed', false)">
+        <span class="settings-row-label">🔕 전체 알림 끄기</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">랜덤 보스</div>
+      <div class="settings-row" style="cursor:pointer" onclick="toggleAllNotif('random', true)">
+        <span class="settings-row-label">🔔 전체 알림 켜기</span>
+      </div>
+      <div class="settings-row" style="cursor:pointer" onclick="toggleAllNotif('random', false)">
+        <span class="settings-row-label">🔕 전체 알림 끄기</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">앱 정보</div>
+      <div class="settings-row"><span class="settings-row-label">버전</span><span class="settings-row-value">1.1.0</span></div>
+      <div class="settings-row"><span class="settings-row-label">전체 보스</span><span class="settings-row-value" id="boss-count">-</span></div>
+      <div class="settings-row"><span class="settings-row-label">자동 리셋</span><span class="settings-row-value">출현 후 30분</span></div>
+    </div>
+
+    <button class="danger-btn" onclick="resetAllKills()">🗑️ 랜덤 보스 처치 기록 전체 초기화</button>
+  </div>
+</div>
+
+<!-- 탭바 -->
+<nav class="tabs">
+  <button class="tab-btn active" onclick="switchTab('fixed', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    고정보스
+  </button>
+  <button class="tab-btn" onclick="switchTab('random', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+    랜덤보스
+  </button>
+  <button class="tab-btn" onclick="switchTab('settings', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    설정
+  </button>
+</nav>
+
+<!-- 상세 패널 -->
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <button class="back-btn" onclick="closeDetail()">‹</button>
+    <div>
+      <div class="detail-title" id="detail-name"></div>
+      <div style="font-size:13px;color:var(--text2)" id="detail-loc"></div>
+    </div>
+  </div>
+  <div class="detail-body">
+    <div class="detail-timer-box">
+      <div class="detail-timer" id="detail-timer">--:--:--</div>
+      <div class="detail-next" id="detail-next"></div>
+    </div>
+    <div id="detail-random-actions"></div>
+    <div class="notif-toggle" id="detail-notif-row">
+      <div>
+        <div class="notif-label">🔔 출현 알림</div>
+        <div class="notif-sub" id="detail-notif-sub"></div>
+      </div>
+      <div class="toggle-sw" id="detail-toggle" onclick="toggleDetailNotif()"></div>
+    </div>
+    <div class="info-grid" id="detail-info"></div>
+    <div id="detail-drops"></div>
+  </div>
+</div>
+
+<!-- 처치 등록 시트 -->
+<div class="sheet-overlay" id="kill-sheet" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="sheet-boss-name"></div>
+    <div class="sheet-sub" id="sheet-boss-sub"></div>
+    <input type="datetime-local" class="time-input" id="kill-time-input" oninput="updateSpawnPreview()">
+    <div class="spawn-preview">
+      <div>
+        <div class="spawn-preview-label">예상 다음 출현</div>
+        <div class="spawn-preview-time" id="spawn-preview-time">--:--</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2)" id="spawn-preview-date"></div>
+    </div>
+    <button class="sheet-btn primary" onclick="confirmKill()">처치 시간 등록</button>
+    <button class="sheet-btn cancel" onclick="closeSheet()">취소</button>
+  </div>
+</div>
+
+<!-- 토스트 -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// 보스 데이터
+// ══════════════════════════════════════════════════════════════
+const WEAKNESS_ICON = {
+  '불':  { bg:'rgba(231,76,60,.2)',  color:'#e74c3c', emoji:'🔥' },
+  '물':  { bg:'rgba(52,152,219,.2)', color:'#3498db', emoji:'💧' },
+  '바람':{ bg:'rgba(46,204,113,.2)', color:'#2ecc71', emoji:'🌀' },
+  '땅':  { bg:'rgba(212,160,23,.2)', color:'#d4a017', emoji:'🪨' },
+  '-':   { bg:'rgba(136,136,160,.2)',color:'#8888a0', emoji:'❓' },
+};
+
+const FIXED_BOSSES = [
+  { id:'f1',  name:'드라카리스',        level:'95', weakness:'-',    location:'던전 - 39.어둠의 수련 던전 4층 - 밤', times:['00:00'], weekdays:null,
+    drops:[{name:'증오의 발톱',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'용의 심장',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'흑정령의 수정 (어쎄신)',grade:'legend'}] },
+  { id:'f2',  name:'폭주한 클라인',      level:'85', weakness:'땅',   location:'던전 - 09.파멸의 기란감옥 1층', times:['00:00','06:00','12:00','18:00'], weekdays:[2,3,4,5,6],
+    drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'기술서 (쇼크 스턴: 베테랑)',grade:'legend'},{name:'기술서 (카운터 배리어: 마스터)',grade:'legend'}] },
+  { id:'f3',  name:'암흑영주 타로스',    level:'85', weakness:'땅',   location:'던전 - 09.파멸의 기란감옥 2층', times:['07:00','14:00','21:00'], weekdays:[2,3,4,5,6],
+    drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'흑정령의 수정 (쉐도우 쇼크)',grade:'legend'}] },
+  { id:'f4',  name:'수문장 고르고스',    level:'90', weakness:'땅',   location:'던전 - 09.파멸의 기란감옥 3층', times:['20:15'], weekdays:[2,3,4,5,6],
+    drops:[{name:'멸마의 가죽 갑옷',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'민첩의 반지',grade:'legend'},{name:'정령의 수정 (엘리멘탈 스턴)',grade:'legend'}] },
+  { id:'f5',  name:'대부 텍투스',        level:'90', weakness:'땅',   location:'던전 - 09.파멸의 기란감옥 4층', times:['21:15'], weekdays:[2,3,4,5,6],
+    drops:[{name:'멸마의 로브',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'지식의 반지',grade:'legend'},{name:'마법서 (앱솔루트 배리어)',grade:'legend'}] },
+  { id:'f6',  name:'칠흑의 군단장 듀라한',level:'95',weakness:'-',   location:'던전 - 39.어둠의 수련 던전 4층 - 낮', times:['18:00'], weekdays:null,
+    drops:[{name:'진 레이피어',grade:'hero'},{name:'진노의 크로우',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'흑정령의 수정 (베놈 마스터리: 데스티니)',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f7',  name:'고룡의 거대 드레이크',level:'94',weakness:'물',  location:'06.굳어버린 용암지대', times:['19:15'], weekdays:null,
+    drops:[{name:'고룡 가죽 부츠',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'기술 교본 (그레시안 실드)',grade:'hero'},{name:'드래곤의 진주',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f8',  name:'설벽의 거대 드레이크',level:'94',weakness:'불',  location:'22.무너진 설벽', times:['19:15'], weekdays:null,
+    drops:[{name:'드레이크 가죽 장갑',grade:'hero'},{name:'드래곤의 진주',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f9',  name:'성지의 가디언 폭스', level:'94', weakness:'바람', location:'04.고룡의 성지', times:['19:15'], weekdays:null,
+    drops:[{name:'수호자의 면갑',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'성지의 반지',grade:'hero'},{name:'사신의 서 (파이널 데스)',grade:'hero'},{name:'드래곤의 진주',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f10', name:'바포메트',            level:'35', weakness:'불',   location:'18.망자의 무덤', times:['14:00','20:00'], weekdays:null,
+    drops:[{name:'바포메트의 지팡이',grade:'hero'},{name:'바포메트의 갑옷',grade:'hero'},{name:'암흑 기술서 (다크 아이)',grade:'hero'},{name:'완력의 목걸이',grade:'hero'}] },
+  { id:'f11', name:'데몬',                level:'84', weakness:'물',   location:'던전 - 29.상아탑 8층', times:['21:55'], weekdays:null,
+    drops:[{name:'데몬의 지팡이',grade:'hero'},{name:'데몬의 갑옷',grade:'hero'},{name:'데몬의 부츠',grade:'hero'},{name:'데몬의 장갑',grade:'hero'},{name:'데몬의 투구',grade:'hero'},{name:'파워 글로브',grade:'hero'},{name:'데몬의 숨결',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'흑정령의 수정 (쉐도우 쇼크)',grade:'legend'}] },
+  { id:'f12', name:'고대병기 네메시스',   level:'-',  weakness:'불',   location:'페트라 - 고대병기 네메시스 주둔지', times:['22:30'], weekdays:null,
+    drops:[{name:'네메시스의 룬소드',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'빛나는 생명의 반지',grade:'hero'},{name:'드래곤의 진주',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'},{name:'세계수의 반지',grade:'legend'}] },
+  { id:'f13', name:'이계의 발록',         level:'-',  weakness:'-',    location:'던전 - 64.이계의 균열', times:['23:00'], weekdays:null,
+    drops:[{name:'혈풍의 도끼',grade:'hero'},{name:'발록의 각성구',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'광전사의 인장 (타이탄: 블릿)',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f14', name:'화염의 데스나이트',   level:'94', weakness:'물',   location:'던전 - 83.화염 던전 2층', times:['23:30'], weekdays:null,
+    drops:[{name:'데스나이트의 불검',grade:'hero'},{name:'데스나이트의 갑옷',grade:'hero'},{name:'데스나이트의 장갑',grade:'hero'},{name:'데스나이트의 투구',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'f15', name:'스피리드',            level:'90', weakness:'불',   location:'47.오크 숲 벌목지대 / 48.오크 숲 안쪽', times:['03:00'], weekdays:null,
+    drops:[{name:'멸마의 로브',grade:'hero'},{name:'현자의 목걸이',grade:'hero'}] },
+  { id:'f16', name:'산적 두목',           level:'76', weakness:'땅',   location:'28.산적소굴', times:['03:00'], weekdays:null,
+    drops:[{name:'미스릴 단검',grade:'hero'},{name:'멸마의 가죽 갑옷',grade:'hero'},{name:'고대 마법서 (룬 마스터리: 에이스)',grade:'hero'}] },
+  { id:'f17', name:'대 흑장로',           level:'73', weakness:'-',    location:'54.용의 계곡 서쪽 (정상)', times:['03:00'], weekdays:null,
+    drops:[{name:'흑장로의 로브',grade:'hero'},{name:'흑장로의 샌달',grade:'hero'}] },
+  { id:'f18', name:'자이언트 크로커다일', level:'73', weakness:'바람', location:'15.로서스섬', times:['03:00'], weekdays:null,
+    drops:[{name:'마력의 장갑',grade:'hero'},{name:'멸마의 비늘 갑옷',grade:'hero'},{name:'기술서 (팬텀 블레이드)',grade:'hero'}] },
+];
+
+const RANDOM_BOSSES = [
+  { id:'r1',  name:'가스트 로드',         level:'90', weakness:'불',   location:'46.오크 부락',                    interval:7.5*3600, drops:[{name:'마법서 (엑스칼리버)',grade:'hero'}] },
+  { id:'r2',  name:'네크로스',            level:'90', weakness:'물',   location:'26.벼락맞은 고목나무 (폭젠)',     interval:4*3600,   drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'빛나는 사이하의 목걸이',grade:'hero'}] },
+  { id:'r3',  name:'암흑 대장군 베리스',  level:'90', weakness:'-',    location:'86.흑기사 전투기지',              interval:6*3600,   drops:[{name:'반역자의 방패',grade:'hero'},{name:'커츠의 갑옷',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'암흑 기술서 (도펠겡어 킹)',grade:'legend'},{name:'[변신 카드] 베리스',grade:'legend'}] },
+  { id:'r4',  name:'암흑 대장로',         level:'90', weakness:'바람', location:'86.흑기사 전투기지',              interval:6*3600,   drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'현자의 목걸이',grade:'hero'}] },
+  { id:'r5',  name:'오르쿠스',            level:'90', weakness:'물',   location:'47.오크 숲 벌목지대 (폭젠)',      interval:6*3600,   drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'투사의 목걸이',grade:'hero'}] },
+  { id:'r6',  name:'케레니스의 분신',     level:'90', weakness:'바람', location:'86.흑기사 전투기지',              interval:3*3600,   drops:[{name:'드래곤의 진주',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'r7',  name:'광풍의 샤스키',       level:'80', weakness:'불',   location:'42.엘모어 격전지',                interval:2*3600,   drops:[] },
+  { id:'r8',  name:'질풍의 샤스키',       level:'80', weakness:'불',   location:'42.엘모어 격전지',                interval:2*3600,   drops:[] },
+  { id:'r9',  name:'분노의 진 이프리트',  level:'77', weakness:'-',    location:'83.화룡의 둥지',                  interval:2*3600,   drops:[{name:'영웅 제작 비법서',grade:'hero'},{name:'마법서 (이뮨 투 함)',grade:'hero'},{name:'이프리트 마력 목걸이',grade:'hero'}] },
+  { id:'r10', name:'질풍의 거대 드레이크',level:'77', weakness:'물',   location:'51~55.용의 계곡 일대',            interval:6*3600,   drops:[{name:'완력의 부츠',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'드레이크 가죽 벨트',grade:'hero'}] },
+  { id:'r11', name:'냉혹한 큰 발의 마요', level:'80', weakness:'바람', location:'32.오렌 설벽',                    interval:3*3600,   drops:[{name:'마요 얼음 부츠',grade:'hero'},{name:'명궁의 장갑',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'고대 마법서 (트리니티)',grade:'hero'}] },
+  { id:'r12', name:'에이션트 자이언트',   level:'80', weakness:'바람', location:'85.황혼 산맥',                    interval:8.5*3600, drops:[{name:'광전사의 인장 (헤라클레스)',grade:'legend'},{name:'광전사의 인장 (타이탄: 라이징)',grade:'legend'},{name:'에이션트 자이언트의 반지',grade:'hero'},{name:'타이탄의 벨트',grade:'hero'}] },
+  { id:'r13', name:'화염의 불꽃 피닉스',  level:'84', weakness:'-',    location:'83.화룡의 둥지',                  interval:8*3600,   drops:[{name:'피닉스 블래스터',grade:'hero'},{name:'피닉스 깃털 가더',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'r14', name:'감시자 데몬',         level:'75', weakness:'물',   location:'던전 - 29.상아탑 7층',            interval:6*3600,   drops:[{name:'데몬의 지팡이',grade:'hero'},{name:'데몬의 갑옷',grade:'hero'},{name:'데몬의 장갑',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'전설 제작 비법서',grade:'legend'}] },
+  { id:'r15', name:'드레이크',            level:'74', weakness:'물',   location:'52~55.용의 계곡 / 51.삼거리',    interval:2*3600,   drops:[{name:'오리하루콘 단검',grade:'hero'}] },
+  { id:'r16', name:'정령 감시자',         level:'74', weakness:'-',    location:'특수 - 고대 정령의 무덤',         interval:null,     drops:[{name:'멸마의 반지',grade:'hero'},{name:'마법서 (캔슬레이션)',grade:'hero'}] },
+  { id:'r17', name:'맘보 킹',             level:'78', weakness:'-',    location:'특수 - 고대 정령의 무덤',         interval:null,     drops:[{name:'오리하루콘 단검',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'멸마의 반지',grade:'hero'}] },
+  { id:'r18', name:'자이언트 웜',         level:'69', weakness:'바람', location:'던전 - 41.에바왕국 던전 4층',     interval:2*3600,   drops:[{name:'영웅 제작 비법서',grade:'hero'}] },
+  { id:'r19', name:'죽음',               level:'67', weakness:'불',   location:'특수 - 버림받은 자들의 땅',       interval:null,     drops:[] },
+  { id:'r20', name:'도펠겡어 보스',       level:'65', weakness:'-',    location:'02.거울의 숲',                    interval:7*3600,   drops:[{name:'투사의 서판 (피어)',grade:'hero'},{name:'도펠겡어 보스의 목걸이',grade:'legend'},{name:'도펠겡어 보스의 반지',grade:'legend'}] },
+  { id:'r21', name:'아르피어',            level:'50', weakness:'불',   location:'05.고요한 숲',                    interval:4*3600,   drops:[{name:'수정 갑옷',grade:'hero'},{name:'마법서 (블랙 핸드)',grade:'hero'}] },
+  { id:'r22', name:'데스나이트',          level:'48', weakness:'물',   location:'18.망자의 무덤',                  interval:9*3600,   drops:[{name:'데스나이트의 불검',grade:'hero'},{name:'데스나이트의 갑옷',grade:'hero'},{name:'기술서 (카운터 배리어: 마스터)',grade:'legend'}] },
+  { id:'r23', name:'리칸트',             level:'47', weakness:'불',   location:'50.요정 숲',                      interval:8*3600,   drops:[{name:'침묵의 검',grade:'hero'},{name:'멸마의 판금 갑옷',grade:'hero'},{name:'암흑 기술서 (보이드 필드)',grade:'hero'}] },
+  { id:'r24', name:'네크로맨서',          level:'46', weakness:'-',    location:'18.망자의 무덤',                  interval:2*3600,   drops:[{name:'마법서 (카운터 디텍션)',grade:'hero'}] },
+  { id:'r25', name:'거대 수호 개미',      level:'45', weakness:'불',   location:'던전 - 01.개미굴',                interval:3.5*3600, drops:[{name:'기술서 (프라이드)',grade:'hero'}] },
+  { id:'r26', name:'카스파',              level:'45', weakness:'-',    location:'17.마법사의 연구실',              interval:2*3600,   drops:[{name:'그레시아 군복',grade:'hero'},{name:'영웅 제작 비법서',grade:'hero'},{name:'멸마의 반지',grade:'hero'}] },
+  { id:'r27', name:'커츠',               level:'39', weakness:'-',    location:'말섬 - 02.검은 기사단 선착장',    interval:10*3600,  drops:[{name:'커츠의 검',grade:'legend'},{name:'반역자의 방패',grade:'legend'},{name:'커츠의 갑옷',grade:'legend'},{name:'마법서 (캔슬레이션)',grade:'hero'}] },
+];
+
+// ══════════════════════════════════════════════════════════════
+// 상태 관리
+// ══════════════════════════════════════════════════════════════
+let STATE = loadState();
+let alertMinutes = parseInt(localStorage.getItem('alertMinutes') || '10');
+let currentDetailBoss = null;
+let currentSheetBossId = null;
+let currentTab = 'fixed';
+
+function loadState() {
+  try { return JSON.parse(localStorage.getItem('bossState') || '{}'); } catch { return {}; }
+}
+function saveState() { localStorage.setItem('bossState', JSON.stringify(STATE)); }
+
+function getState(id) { return STATE[id] || { notif: false, killTime: null }; }
+function setState(id, patch) {
+  STATE[id] = { ...getState(id), ...patch };
+  saveState();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 시간 계산
+// ══════════════════════════════════════════════════════════════
+function nextFixed(boss) {
+  const now = new Date();
+  const candidates = [];
+  for (let d = 0; d <= 7; d++) {
+    const day = new Date(now); day.setDate(day.getDate() + d);
+    if (boss.weekdays) {
+      const wd = day.getDay() === 0 ? 7 : day.getDay(); // 1=월~7=일
+      const mapped = day.getDay() === 0 ? 7 : (day.getDay() + 1); // JS: 0=Sun → 1; Mon→2
+      // weekdays는 [2,3,4,5,6] = 월~금 (JS getDay: 0=일,1=월,...,5=금,6=토)
+      if (!boss.weekdays.includes(day.getDay() === 0 ? 7 : day.getDay())) continue;
+    }
+    for (const t of boss.times) {
+      const [h, m] = t.split(':').map(Number);
+      const candidate = new Date(day);
+      candidate.setHours(h, m, 0, 0);
+      if (candidate > now) candidates.push(candidate);
+    }
+  }
+  candidates.sort((a, b) => a - b);
+  return candidates[0] || null;
+}
+
+function nextRandom(boss) {
+  const s = getState(boss.id);
+  if (!s.killTime || !boss.interval) return null;
+  return new Date(s.killTime + boss.interval * 1000);
+}
+
+function remaining(boss) {
+  const target = boss.times ? nextFixed(boss) : nextRandom(boss);
+  if (!target) return boss.times ? '--:--:--' : '처치 미등록';
+  const diff = Math.floor((target - Date.now()) / 1000);
+  if (diff <= 0) return '출현!';
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  return h > 0
+    ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function isImminent(boss) {
+  const target = boss.times ? nextFixed(boss) : nextRandom(boss);
+  if (!target) return false;
+  const diff = (target - Date.now()) / 1000;
+  return diff > 0 && diff <= alertMinutes * 60;
+}
+
+function fmtInterval(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 렌더링
+// ══════════════════════════════════════════════════════════════
+function weaknessEl(w) {
+  const info = WEAKNESS_ICON[w] || WEAKNESS_ICON['-'];
+  return `<div class="weakness-icon" style="background:${info.bg}">${info.emoji}</div>`;
+}
+
+function bossCard(boss, isRandom) {
+  const rem = remaining(boss);
+  const imm = isImminent(boss);
+  const s = getState(boss.id);
+  const notifOn = s.notif;
+  const hasKill = !!s.killTime;
+
+  return `<div class="boss-card${imm?' imminent':''}" id="card-${boss.id}">
+    <div class="card-main" onclick="openDetail('${boss.id}','${isRandom?'random':'fixed'}')">
+      ${weaknessEl(boss.weakness)}
+      <div class="card-info">
+        <div class="card-name">${boss.name} ${boss.level!=='-'?`<span class="card-level">Lv.${boss.level}</span>`:''}</div>
+        <div class="card-loc">${boss.location}</div>
+        ${isRandom && hasKill ? `<div class="kill-time">⏱ 처치: ${new Date(s.killTime).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+      </div>
+      <div class="card-right">
+        <div class="timer${rem==='출현!'?' spawned':''}" id="timer-${boss.id}">${rem}</div>
+        <div class="card-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn bell-btn${notifOn?'':' off'}" id="bell-${boss.id}" onclick="toggleNotif('${boss.id}')" title="${notifOn?'알림 끄기':'알림 켜기'}">
+            ${notifOn?'🔔':'🔕'}
+          </button>
+          ${isRandom?`<button class="icon-btn kill-btn" onclick="openSheet('${boss.id}')" title="처치 등록">⚔️</button>`:''}
+          ${isRandom&&hasKill?`<button class="icon-btn reset-btn" onclick="resetKill('${boss.id}')" title="리셋">↺</button>`:''}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderFixed() {
+  const q = document.getElementById('search-fixed').value.toLowerCase();
+  const list = FIXED_BOSSES.filter(b =>
+    !q || b.name.includes(q) || b.location.includes(q));
+  document.getElementById('list-fixed').innerHTML =
+    list.length ? list.map(b => bossCard(b, false)).join('') :
+    '<div class="empty">검색 결과가 없습니다</div>';
+}
+
+function renderRandom() {
+  const q = document.getElementById('search-random').value.toLowerCase();
+  const list = RANDOM_BOSSES.filter(b =>
+    !q || b.name.includes(q) || b.location.includes(q));
+  document.getElementById('list-random').innerHTML =
+    list.length ? list.map(b => bossCard(b, true)).join('') :
+    '<div class="empty">검색 결과가 없습니다</div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// 탭 전환
+// ══════════════════════════════════════════════════════════════
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+tab).classList.add('active');
+  btn.classList.add('active');
+  if (tab === 'settings') updateSettingsUI();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 타이머 업데이트 (1초)
+// ══════════════════════════════════════════════════════════════
+function tick() {
+  const allBosses = [...FIXED_BOSSES, ...RANDOM_BOSSES];
+  for (const boss of allBosses) {
+    const el = document.getElementById('timer-'+boss.id);
+    if (!el) continue;
+    const rem = remaining(boss);
+    el.textContent = rem;
+    el.className = 'timer' + (rem==='출현!'?' spawned':'');
+    const card = document.getElementById('card-'+boss.id);
+    if (card) {
+      if (isImminent(boss)) card.classList.add('imminent');
+      else card.classList.remove('imminent');
+    }
+  }
+  // 상세 패널 타이머
+  if (currentDetailBoss) {
+    const rem = remaining(currentDetailBoss);
+    const dt = document.getElementById('detail-timer');
+    if (dt) {
+      dt.textContent = rem;
+      dt.className = 'detail-timer' + (rem==='출현!'||isImminent(currentDetailBoss)?' red':'');
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 알림 토글
+// ══════════════════════════════════════════════════════════════
+function toggleNotif(id) {
+  const s = getState(id);
+  const newVal = !s.notif;
+  setState(id, { notif: newVal });
+  const btn = document.getElementById('bell-'+id);
+  if (btn) { btn.textContent = newVal?'🔔':'🔕'; btn.className='icon-btn bell-btn'+(newVal?'':' off'); }
+  if (newVal) scheduleNotif(id); else cancelNotif(id);
+  updateSettingsUI();
+  showToast(newVal ? '🔔 알림이 켜졌습니다' : '🔕 알림이 꺼졌습니다');
+}
+
+function toggleAllNotif(type, on) {
+  const list = type==='fixed' ? FIXED_BOSSES : RANDOM_BOSSES;
+  list.forEach(b => {
+    setState(b.id, { notif: on });
+    if (on) scheduleNotif(b.id); else cancelNotif(b.id);
+  });
+  renderFixed(); renderRandom();
+  updateSettingsUI();
+  showToast(on ? '🔔 전체 알림 켜짐' : '🔕 전체 알림 꺼짐');
+}
+
+// ══════════════════════════════════════════════════════════════
+// 로컬 알림 (Web Notification API)
+// ══════════════════════════════════════════════════════════════
+const notifTimers = {};
+
+async function requestNotifPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+}
+
+function scheduleNotif(bossId) {
+  cancelNotif(bossId);
+  const boss = [...FIXED_BOSSES, ...RANDOM_BOSSES].find(b => b.id === bossId);
+  if (!boss || !getState(bossId).notif) return;
+  const target = boss.times ? nextFixed(boss) : nextRandom(boss);
+  if (!target) return;
+  const alertTime = target.getTime() - alertMinutes * 60 * 1000;
+  const delay = alertTime - Date.now();
+  if (delay <= 0) return;
+  notifTimers[bossId] = setTimeout(() => {
+    if (Notification.permission === 'granted') {
+      new Notification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
+        body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
+        icon: 'icon-192.png',
+        tag: bossId
+      });
+    }
+    // 재예약 (다음 출현)
+    setTimeout(() => scheduleNotif(bossId), 60000);
+  }, delay);
+}
+
+function cancelNotif(bossId) {
+  if (notifTimers[bossId]) { clearTimeout(notifTimers[bossId]); delete notifTimers[bossId]; }
+}
+
+function rescheduleAll() {
+  [...FIXED_BOSSES, ...RANDOM_BOSSES].forEach(b => {
+    if (getState(b.id).notif) scheduleNotif(b.id);
+    else cancelNotif(b.id);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 처치 등록 / 리셋
+// ══════════════════════════════════════════════════════════════
+function openSheet(bossId) {
+  currentSheetBossId = bossId;
+  const boss = RANDOM_BOSSES.find(b => b.id === bossId);
+  document.getElementById('sheet-boss-name').textContent = boss.name;
+  document.getElementById('sheet-boss-sub').textContent =
+    boss.interval ? `리젠 주기: ${fmtInterval(boss.interval)}` : '리젠 주기 미정';
+  // 현재 시간으로 초기화
+  const now = new Date();
+  now.setSeconds(0, 0);
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 16);
+  document.getElementById('kill-time-input').value = local;
+  updateSpawnPreview();
+  document.getElementById('kill-sheet').classList.add('open');
+}
+
+function closeSheet() { document.getElementById('kill-sheet').classList.remove('open'); }
+
+function updateSpawnPreview() {
+  const boss = RANDOM_BOSSES.find(b => b.id === currentSheetBossId);
+  const val = document.getElementById('kill-time-input').value;
+  if (!val || !boss?.interval) {
+    document.getElementById('spawn-preview-time').textContent = '--:--';
+    document.getElementById('spawn-preview-date').textContent = '';
+    return;
+  }
+  const kill = new Date(val);
+  const next = new Date(kill.getTime() + boss.interval * 1000);
+  document.getElementById('spawn-preview-time').textContent =
+    next.toLocaleTimeString('ko', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('spawn-preview-date').textContent =
+    next.toLocaleDateString('ko', { month: 'short', day: 'numeric' });
+}
+
+function confirmKill() {
+  const val = document.getElementById('kill-time-input').value;
+  if (!val) return;
+  const killTime = new Date(val).getTime();
+  setState(currentSheetBossId, { killTime });
+  closeSheet();
+  renderRandom();
+  if (getState(currentSheetBossId).notif) scheduleNotif(currentSheetBossId);
+  showToast('⚔️ 처치 시간이 등록되었습니다');
+  autoResetCheck();
+}
+
+function resetKill(bossId) {
+  if (!confirm('처치 기록을 초기화하시겠습니까?')) return;
+  setState(bossId, { killTime: null });
+  cancelNotif(bossId);
+  renderRandom();
+  if (currentDetailBoss?.id === bossId) updateDetailContent();
+  showToast('↺ 처치 기록이 초기화되었습니다');
+}
+
+function resetAllKills() {
+  if (!confirm('모든 랜덤 보스의 처치 기록을 초기화하시겠습니까?')) return;
+  RANDOM_BOSSES.forEach(b => { setState(b.id, { killTime: null }); cancelNotif(b.id); });
+  renderRandom();
+  showToast('🗑️ 전체 처치 기록이 초기화되었습니다');
+}
+
+// ══════════════════════════════════════════════════════════════
+// 자동 리셋 (출현 후 30분 경과 시)
+// ══════════════════════════════════════════════════════════════
+function autoResetCheck() {
+  RANDOM_BOSSES.forEach(b => {
+    const s = getState(b.id);
+    if (!s.killTime || !b.interval) return;
+    const expected = s.killTime + b.interval * 1000;
+    const grace = 30 * 60 * 1000;
+    if (Date.now() > expected + grace) {
+      setState(b.id, { killTime: null });
+      cancelNotif(b.id);
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 상세 패널
+// ══════════════════════════════════════════════════════════════
+function openDetail(bossId, type) {
+  const boss = type==='fixed'
+    ? FIXED_BOSSES.find(b=>b.id===bossId)
+    : RANDOM_BOSSES.find(b=>b.id===bossId);
+  if (!boss) return;
+  currentDetailBoss = boss;
+  document.getElementById('detail-name').textContent = boss.name;
+  document.getElementById('detail-loc').textContent = boss.location;
+  updateDetailContent();
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function updateDetailContent() {
+  if (!currentDetailBoss) return;
+  const boss = currentDetailBoss;
+  const isRandom = !!boss.interval || boss.interval === null;
+  const s = getState(boss.id);
+  const rem = remaining(boss);
+  const imm = isImminent(boss);
+
+  // 타이머
+  const dt = document.getElementById('detail-timer');
+  dt.textContent = rem;
+  dt.className = 'detail-timer' + (rem==='출현!'||imm?' red':'');
+
+  // 다음 출현
+  const target = boss.times ? nextFixed(boss) : nextRandom(boss);
+  document.getElementById('detail-next').textContent = target
+    ? `다음 출현: ${target.toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})} (${target.toLocaleDateString('ko',{month:'short',day:'numeric'})})`
+    : (isRandom ? '처치 시간 등록 후 확인 가능합니다' : '');
+
+  // 랜덤 액션 버튼
+  const ra = document.getElementById('detail-random-actions');
+  if (boss.interval !== undefined && !boss.times) {
+    ra.innerHTML = `<div class="detail-actions">
+      <button class="action-btn primary" onclick="openSheet('${boss.id}');closeDetail()">⚔️ 처치 등록</button>
+      ${s.killTime?`<button class="action-btn secondary" onclick="resetKill('${boss.id}')">↺ 리셋</button>`:''}
+    </div>`;
+  } else { ra.innerHTML = ''; }
+
+  // 알림 토글
+  document.getElementById('detail-toggle').className = 'toggle-sw' + (s.notif?' on':'');
+  document.getElementById('detail-notif-sub').textContent =
+    `출현 ${alertMinutes}분 전 알림` + (s.notif && target
+      ? ` · ${new Date(target.getTime()-alertMinutes*60000).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})} 예정` : '');
+
+  // 기본 정보
+  document.getElementById('detail-info').innerHTML = `
+    <div class="info-row"><span class="info-label">레벨</span><span class="info-value">${boss.level==='-'?'-':'Lv.'+boss.level}</span></div>
+    <div class="info-row"><span class="info-label">약점</span><span class="info-value">${boss.weakness}</span></div>
+    <div class="info-row"><span class="info-label">타입</span><span class="info-value">${boss.times?'고정 시간':'랜덤'}</span></div>
+    ${boss.interval?`<div class="info-row"><span class="info-label">리젠 주기</span><span class="info-value">${fmtInterval(boss.interval)}</span></div>`:''}
+    ${boss.times?.length>1?`<div class="info-row"><span class="info-label">출현 시간</span><span class="info-value">${boss.times.join(' / ')}</span></div>`:''}
+    ${s.killTime?`<div class="info-row"><span class="info-label">마지막 처치</span><span class="info-value" style="color:var(--orange)">${new Date(s.killTime).toLocaleString('ko',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>`:''}
+  `;
+
+  // 드랍 아이템
+  const dropsEl = document.getElementById('detail-drops');
+  if (boss.drops?.length) {
+    dropsEl.innerHTML = `<div class="drops-box">
+      <div class="drops-title">드랍 아이템</div>
+      ${boss.drops.map(d=>`
+        <div class="drop-item">
+          <div class="drop-dot" style="background:${d.grade==='hero'?'#e74c3c':'#9b59b6'}"></div>
+          <span class="drop-name ${d.grade}">${d.name}</span>
+          <span class="drop-grade ${d.grade}">${d.grade==='hero'?'영웅':'전설'}</span>
+        </div>`).join('')}
+    </div>`;
+  } else { dropsEl.innerHTML = ''; }
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  currentDetailBoss = null;
+}
+
+function toggleDetailNotif() {
+  if (!currentDetailBoss) return;
+  toggleNotif(currentDetailBoss.id);
+  updateDetailContent();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 설정
+// ══════════════════════════════════════════════════════════════
+function updateAlertMinutes(val) {
+  alertMinutes = parseInt(val);
+  localStorage.setItem('alertMinutes', alertMinutes);
+  rescheduleAll();
+  showToast(`⏰ 알림 시간: 출현 ${alertMinutes}분 전`);
+}
+
+function updateSettingsUI() {
+  const all = [...FIXED_BOSSES, ...RANDOM_BOSSES];
+  const cnt = all.filter(b => getState(b.id).notif).length;
+  const el = document.getElementById('notif-count');
+  if (el) el.textContent = `${cnt} / ${all.length}개`;
+  const bc = document.getElementById('boss-count');
+  if (bc) bc.textContent = `${all.length}개`;
+  const am = document.getElementById('alert-minutes');
+  if (am) am.value = alertMinutes;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 토스트
+// ══════════════════════════════════════════════════════════════
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 초기화
+// ══════════════════════════════════════════════════════════════
+async function init() {
+  // SW 등록
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  await requestNotifPermission();
+  autoResetCheck();
+  renderFixed();
+  renderRandom();
+  updateSettingsUI();
+  rescheduleAll();
+  setInterval(tick, 1000);
+  setInterval(autoResetCheck, 60000);
+}
+
+init();
+</script>
+</body>
+</html>
