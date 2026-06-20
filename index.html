@@ -378,6 +378,20 @@
   <div style="padding:12px 12px 90px">
 
     <div class="settings-section">
+      <div class="settings-label">시간대 설정</div>
+      <div class="settings-row">
+        <span class="settings-row-label">📍 현재 위치 시간대</span>
+        <select id="timezone-select" onchange="updateTimezone(this.value)">
+          <option value="KST">🇰🇷 한국 (KST)</option>
+          <option value="CST">🇨🇳 중국 (CST)</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <span class="settings-row-label" style="font-size:12px;color:var(--text2)">보스 출현 시간은 KST 기준입니다.<br>중국 선택 시 자동으로 -1시간 적용됩니다.</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">알림 시간</div>
       <div class="settings-row">
         <span class="settings-row-label">출현 N분 전 알림</span>
@@ -397,6 +411,13 @@
       <div class="settings-row">
         <span class="settings-row-label">활성 알림 보스</span>
         <span class="badge" id="notif-count">0</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-row-label">알림 권한 상태</span>
+        <span id="notif-permission-status" class="settings-row-value">확인 중...</span>
+      </div>
+      <div class="settings-row" style="cursor:pointer" onclick="requestNotifPermission()">
+        <span class="settings-row-label" style="color:var(--orange)">🔔 알림 권한 요청하기</span>
       </div>
     </div>
 
@@ -582,6 +603,7 @@ const RANDOM_BOSSES = [
 // ══════════════════════════════════════════════════════════════
 let STATE = loadState();
 let alertMinutes = parseInt(localStorage.getItem('alertMinutes') || '10');
+let timezone = localStorage.getItem('timezone') || 'KST'; // 'KST' or 'CST'
 let currentDetailBoss = null;
 let currentSheetBossId = null;
 let currentTab = 'fixed';
@@ -600,22 +622,27 @@ function setState(id, patch) {
 // ══════════════════════════════════════════════════════════════
 // 시간 계산
 // ══════════════════════════════════════════════════════════════
+function getTimezoneOffset() {
+  // KST = UTC+9, CST(중국) = UTC+8 → 1시간 차이
+  return timezone === 'CST' ? 60 * 60 * 1000 : 0; // CST면 1시간(ms) 빼기
+}
+
 function nextFixed(boss) {
   const now = new Date();
+  const offset = getTimezoneOffset();
   const candidates = [];
   for (let d = 0; d <= 7; d++) {
     const day = new Date(now); day.setDate(day.getDate() + d);
     if (boss.weekdays) {
-      const wd = day.getDay() === 0 ? 7 : day.getDay(); // 1=월~7=일
-      const mapped = day.getDay() === 0 ? 7 : (day.getDay() + 1); // JS: 0=Sun → 1; Mon→2
-      // weekdays는 [2,3,4,5,6] = 월~금 (JS getDay: 0=일,1=월,...,5=금,6=토)
       if (!boss.weekdays.includes(day.getDay() === 0 ? 7 : day.getDay())) continue;
     }
     for (const t of boss.times) {
       const [h, m] = t.split(':').map(Number);
       const candidate = new Date(day);
       candidate.setHours(h, m, 0, 0);
-      if (candidate > now) candidates.push(candidate);
+      // CST면 KST 기준 시간에서 1시간을 빼서 실제 중국 로컬 시간으로 변환
+      const adjusted = new Date(candidate.getTime() - offset);
+      if (adjusted > now) candidates.push(adjusted);
     }
   }
   candidates.sort((a, b) => a - b);
@@ -771,9 +798,14 @@ function tick() {
 // ══════════════════════════════════════════════════════════════
 // 알림 토글
 // ══════════════════════════════════════════════════════════════
-function toggleNotif(id) {
+async function toggleNotif(id) {
   const s = getState(id);
   const newVal = !s.notif;
+  // 알림을 켤 때 권한 요청 (사용자 제스처 직후라 iOS에서 허용됨)
+  if (newVal) {
+    const granted = await requestNotifPermission();
+    if (!granted) return;
+  }
   setState(id, { notif: newVal });
   const btn = document.getElementById('bell-'+id);
   if (btn) { btn.textContent = newVal?'🔔':'🔕'; btn.className='icon-btn bell-btn'+(newVal?'':' off'); }
@@ -798,14 +830,31 @@ function toggleAllNotif(type, on) {
 // ══════════════════════════════════════════════════════════════
 const notifTimers = {};
 
+// iOS는 반드시 사용자 제스처(버튼 클릭) 후에 권한 요청해야 함
 async function requestNotifPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    await Notification.requestPermission();
+  if (!('Notification' in window)) {
+    showToast('❌ 이 브라우저는 알림을 지원하지 않습니다');
+    return false;
+  }
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') {
+    showToast('❌ 알림이 차단됐습니다. 설정 앱에서 허용해 주세요');
+    return false;
+  }
+  // 권한 요청 (반드시 버튼 클릭 등 사용자 제스처 후 호출)
+  const result = await Notification.requestPermission();
+  if (result === 'granted') {
+    showToast('✅ 알림 권한이 허용되었습니다');
+    return true;
+  } else {
+    showToast('❌ 알림 권한이 거부되었습니다');
+    return false;
   }
 }
 
 function scheduleNotif(bossId) {
   cancelNotif(bossId);
+  if (Notification.permission !== 'granted') return;
   const boss = [...FIXED_BOSSES, ...RANDOM_BOSSES].find(b => b.id === bossId);
   if (!boss || !getState(bossId).notif) return;
   const target = boss.times ? nextFixed(boss) : nextRandom(boss);
@@ -815,13 +864,27 @@ function scheduleNotif(bossId) {
   if (delay <= 0) return;
   notifTimers[bossId] = setTimeout(() => {
     if (Notification.permission === 'granted') {
-      new Notification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
-        body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
-        icon: 'icon-192.png',
-        tag: bossId
-      });
+      try {
+        // Service Worker를 통한 알림 (iOS PWA에서 더 안정적)
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.ready.then(reg => {
+            reg.showNotification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
+              body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
+              icon: '/LineageM-BOSS/icon-192.png',
+              badge: '/LineageM-BOSS/icon-192.png',
+              tag: bossId,
+              vibrate: [200, 100, 200]
+            });
+          });
+        } else {
+          new Notification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
+            body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
+            icon: '/LineageM-BOSS/icon-192.png',
+            tag: bossId
+          });
+        }
+      } catch(e) { console.log('알림 오류:', e); }
     }
-    // 재예약 (다음 출현)
     setTimeout(() => scheduleNotif(bossId), 60000);
   }, delay);
 }
@@ -1013,6 +1076,15 @@ function updateAlertMinutes(val) {
   showToast(`⏰ 알림 시간: 출현 ${alertMinutes}분 전`);
 }
 
+function updateTimezone(val) {
+  timezone = val;
+  localStorage.setItem('timezone', val);
+  renderFixed();
+  renderRandom();
+  rescheduleAll();
+  showToast(val === 'CST' ? '🇨🇳 중국 시간 (CST) 적용됨' : '🇰🇷 한국 시간 (KST) 적용됨');
+}
+
 function updateSettingsUI() {
   const all = [...FIXED_BOSSES, ...RANDOM_BOSSES];
   const cnt = all.filter(b => getState(b.id).notif).length;
@@ -1022,6 +1094,16 @@ function updateSettingsUI() {
   if (bc) bc.textContent = `${all.length}개`;
   const am = document.getElementById('alert-minutes');
   if (am) am.value = alertMinutes;
+  const tz = document.getElementById('timezone-select');
+  if (tz) tz.value = timezone;
+  // 알림 권한 상태 표시
+  const ps = document.getElementById('notif-permission-status');
+  if (ps) {
+    if (!('Notification' in window)) ps.textContent = '미지원';
+    else if (Notification.permission === 'granted') ps.textContent = '✅ 허용됨';
+    else if (Notification.permission === 'denied') ps.textContent = '❌ 차단됨';
+    else ps.textContent = '⚠️ 미설정';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1043,7 +1125,7 @@ async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/LineageM-BOSS/sw.js').catch(() => {});
   }
-  await requestNotifPermission();
+  // iOS: 자동 권한 요청 안 함 - 🔔 버튼 클릭 시 요청
   autoResetCheck();
   renderFixed();
   renderRandom();
