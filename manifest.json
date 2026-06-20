@@ -2,7 +2,7 @@
   "name": "리니지M 보스 알람",
   "short_name": "보스알람",
   "description": "리니지M 필드 보스 출현 타이머 및 알람",
-  "start_url": "/",
+  "start_url": "/LineageM-BOSS/",
   "display": "standalone",
   "background_color": "#0a0a0f",
   "theme_color": "#8b1a1a",
