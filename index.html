@@ -622,31 +622,46 @@ function setState(id, patch) {
 // ══════════════════════════════════════════════════════════════
 // 시간 계산
 // ══════════════════════════════════════════════════════════════
-function getTimezoneOffset() {
-  // KST = UTC+9, CST(중국) = UTC+8 → 1시간 차이
-  return timezone === 'CST' ? 60 * 60 * 1000 : 0; // CST면 1시간(ms) 빼기
-}
-
 function nextFixed(boss) {
-  const now = new Date();
-  const offset = getTimezoneOffset();
+  // 핵심 원리:
+  // 보스 출현 시간은 KST(UTC+9) 기준
+  // KST "HH:mm" → UTC 타임스탬프로 변환 → 그게 실제 절대 시간
+  // 기기가 어느 시간대든 상관없이 UTC 기준으로 비교
+
+  const now = Date.now(); // UTC ms
+  const KST_UTC_OFFSET = 9 * 60 * 60 * 1000; // 9시간
   const candidates = [];
-  for (let d = 0; d <= 7; d++) {
-    const day = new Date(now); day.setDate(day.getDate() + d);
-    if (boss.weekdays) {
-      if (!boss.weekdays.includes(day.getDay() === 0 ? 7 : day.getDay())) continue;
-    }
+
+  // 오늘 날짜를 KST 기준으로 구하기
+  const nowKST = new Date(now + KST_UTC_OFFSET); // UTC 기준 KST 시간
+  const todayKST = new Date(Date.UTC(
+    nowKST.getUTCFullYear(),
+    nowKST.getUTCMonth(),
+    nowKST.getUTCDate()
+  ));
+
+  for (let d = -1; d <= 8; d++) {
+    const dayKST = new Date(todayKST.getTime() + d * 86400000);
+
     for (const t of boss.times) {
       const [h, m] = t.split(':').map(Number);
-      const candidate = new Date(day);
-      candidate.setHours(h, m, 0, 0);
-      // CST면 KST 기준 시간에서 1시간을 빼서 실제 중국 로컬 시간으로 변환
-      const adjusted = new Date(candidate.getTime() - offset);
-      if (adjusted > now) candidates.push(adjusted);
+      // KST 기준 출현 시각의 UTC 타임스탬프
+      const spawnUTC = dayKST.getTime() + (h * 3600 + m * 60) * 1000 - KST_UTC_OFFSET;
+
+      // 평일 체크 (KST 기준 요일)
+      if (boss.weekdays) {
+        const kstWeekday = new Date(spawnUTC + KST_UTC_OFFSET).getUTCDay();
+        // JS: 0=일, 1=월~6=토 / 게임 weekdays: [2,3,4,5,6]=월~금
+        const mapped = kstWeekday === 0 ? 7 : kstWeekday + 1;
+        if (!boss.weekdays.includes(mapped)) continue;
+      }
+
+      if (spawnUTC > now) candidates.push(spawnUTC);
     }
   }
+
   candidates.sort((a, b) => a - b);
-  return candidates[0] || null;
+  return candidates.length ? new Date(candidates[0]) : null;
 }
 
 function nextRandom(boss) {
@@ -1082,7 +1097,8 @@ function updateTimezone(val) {
   renderFixed();
   renderRandom();
   rescheduleAll();
-  showToast(val === 'CST' ? '🇨🇳 중국 시간 (CST) 적용됨' : '🇰🇷 한국 시간 (KST) 적용됨');
+  // UTC 기반 계산이므로 기기 시간대에 맞게 자동 표시됨
+  showToast(val === 'CST' ? '🇨🇳 중국 시간 기준으로 표시됩니다' : '🇰🇷 한국 시간 기준으로 표시됩니다');
 }
 
 function updateSettingsUI() {
