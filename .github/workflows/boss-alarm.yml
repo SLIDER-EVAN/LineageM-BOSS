@@ -2,9 +2,13 @@ name: Boss Alarm Notification
 
 on:
   schedule:
-    # 매 5분마다 실행 (UTC 기준)
     - cron: '*/5 * * * *'
-  workflow_dispatch: # 수동 실행 가능
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: '테스트 모드 (즉시 알림 전송)'
+        required: false
+        default: 'false'
 
 jobs:
   send-boss-alarm:
@@ -14,6 +18,7 @@ jobs:
         env:
           ONESIGNAL_APP_ID: "7da7a5ce-e7c1-4463-887f-0729aa35a20d"
           ONESIGNAL_API_KEY: ${{ secrets.ONESIGNAL_API_KEY }}
+          TEST_MODE: ${{ github.event.inputs.test_mode }}
         run: |
           python3 << 'PYEOF'
           import json
@@ -23,44 +28,39 @@ jobs:
           import os
 
           APP_ID = os.environ['ONESIGNAL_APP_ID']
-          API_KEY = os.environ['ONESIGNAL_API_KEY']
-          ALERT_MINUTES = 10  # 출현 N분 전 알림
+          API_KEY = os.environ.get('ONESIGNAL_API_KEY', '')
+          TEST_MODE = os.environ.get('TEST_MODE', 'false') == 'true'
+          ALERT_MINUTES = 10
 
-          # KST timezone
           KST = timezone(timedelta(hours=9))
-
-          # 현재 KST 시간
           now_kst = datetime.now(KST)
           now_utc = datetime.now(timezone.utc)
 
-          print(f"현재 KST: {now_kst.strftime('%Y-%m-%d %H:%M')} ({['월','화','수','목','금','토','일'][now_kst.weekday()]})")
+          print(f"현재 KST: {now_kst.strftime('%Y-%m-%d %H:%M:%S')} ({['월','화','수','목','금','토','일'][now_kst.weekday()]})")
+          print(f"현재 UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+          print(f"테스트 모드: {TEST_MODE}")
+          print(f"API KEY 존재: {'YES' if API_KEY else 'NO - SECRET 미설정!'}")
 
-          # 고정 보스 데이터 (KST 기준 출현 시간)
           FIXED_BOSSES = [
-              {"id": "f1",  "name": "드라카리스",          "times": ["00:00"], "weekdays": None,        "location": "던전 - 39.어둠의 수련 던전 4층 - 밤"},
-              {"id": "f2",  "name": "폭주한 클라인",        "times": ["00:00","06:00","12:00","18:00"], "weekdays": [0,1,2,3,4], "location": "던전 - 09.파멸의 기란감옥 1층"},
-              {"id": "f3",  "name": "암흑영주 타로스",      "times": ["07:00","14:00","21:00"], "weekdays": [0,1,2,3,4], "location": "던전 - 09.파멸의 기란감옥 2층"},
-              {"id": "f4",  "name": "수문장 고르고스",      "times": ["20:15"], "weekdays": [0,1,2,3,4], "location": "던전 - 09.파멸의 기란감옥 3층"},
-              {"id": "f5",  "name": "대부 텍투스",          "times": ["21:15"], "weekdays": [0,1,2,3,4], "location": "던전 - 09.파멸의 기란감옥 4층"},
-              {"id": "f6",  "name": "칠흑의 군단장 듀라한", "times": ["18:00"], "weekdays": None,        "location": "던전 - 39.어둠의 수련 던전 4층 - 낮"},
-              {"id": "f7",  "name": "고룡의 거대 드레이크", "times": ["19:15"], "weekdays": None,        "location": "06.굳어버린 용암지대"},
-              {"id": "f8",  "name": "설벽의 거대 드레이크", "times": ["19:15"], "weekdays": None,        "location": "22.무너진 설벽"},
-              {"id": "f9",  "name": "성지의 가디언 폭스",   "times": ["19:15"], "weekdays": None,        "location": "04.고룡의 성지"},
-              {"id": "f10", "name": "바포메트",              "times": ["14:00","20:00"], "weekdays": None, "location": "18.망자의 무덤"},
-              {"id": "f11", "name": "데몬",                  "times": ["21:55"], "weekdays": None,        "location": "던전 - 29.상아탑 8층"},
-              {"id": "f12", "name": "고대병기 네메시스",     "times": ["22:30"], "weekdays": None,        "location": "페트라 - 고대병기 네메시스 주둔지"},
-              {"id": "f13", "name": "이계의 발록",           "times": ["23:00"], "weekdays": None,        "location": "던전 - 64.이계의 균열"},
-              {"id": "f14", "name": "화염의 데스나이트",     "times": ["23:30"], "weekdays": None,        "location": "던전 - 83.화염 던전 2층"},
+              {"id":"f1",  "name":"드라카리스",          "times":["00:00"],                      "weekdays":None,      "location":"던전 - 39.어둠의 수련 던전 4층 - 밤"},
+              {"id":"f2",  "name":"폭주한 클라인",        "times":["00:00","06:00","12:00","18:00"],"weekdays":[0,1,2,3,4],"location":"던전 - 09.파멸의 기란감옥 1층"},
+              {"id":"f3",  "name":"암흑영주 타로스",      "times":["07:00","14:00","21:00"],      "weekdays":[0,1,2,3,4],"location":"던전 - 09.파멸의 기란감옥 2층"},
+              {"id":"f4",  "name":"수문장 고르고스",      "times":["20:15"],                      "weekdays":[0,1,2,3,4],"location":"던전 - 09.파멸의 기란감옥 3층"},
+              {"id":"f5",  "name":"대부 텍투스",          "times":["21:15"],                      "weekdays":[0,1,2,3,4],"location":"던전 - 09.파멸의 기란감옥 4층"},
+              {"id":"f6",  "name":"칠흑의 군단장 듀라한", "times":["18:00"],                      "weekdays":None,      "location":"던전 - 39.어둠의 수련 던전 4층 - 낮"},
+              {"id":"f7",  "name":"고룡의 거대 드레이크", "times":["19:15"],                      "weekdays":None,      "location":"06.굳어버린 용암지대"},
+              {"id":"f8",  "name":"설벽의 거대 드레이크", "times":["19:15"],                      "weekdays":None,      "location":"22.무너진 설벽"},
+              {"id":"f9",  "name":"성지의 가디언 폭스",   "times":["19:15"],                      "weekdays":None,      "location":"04.고룡의 성지"},
+              {"id":"f10", "name":"바포메트",              "times":["14:00","20:00"],              "weekdays":None,      "location":"18.망자의 무덤"},
+              {"id":"f11", "name":"데몬",                  "times":["21:55"],                      "weekdays":None,      "location":"던전 - 29.상아탑 8층"},
+              {"id":"f12", "name":"고대병기 네메시스",     "times":["22:30"],                      "weekdays":None,      "location":"페트라 - 고대병기 네메시스 주둔지"},
+              {"id":"f13", "name":"이계의 발록",           "times":["23:00"],                      "weekdays":None,      "location":"던전 - 64.이계의 균열"},
+              {"id":"f14", "name":"화염의 데스나이트",     "times":["23:30"],                      "weekdays":None,      "location":"던전 - 83.화염 던전 2층"},
           ]
 
-          # weekdays: Python weekday() 기준 0=월 ~ 6=일
-          # 평일 = [0,1,2,3,4]
-
           def get_next_spawn_utc(boss):
-              """보스의 다음 출현 UTC 시간 반환"""
               for day_offset in range(-1, 8):
                   check_kst = now_kst + timedelta(days=day_offset)
-                  # 평일 체크
                   if boss["weekdays"] is not None:
                       if check_kst.weekday() not in boss["weekdays"]:
                           continue
@@ -72,21 +72,20 @@ jobs:
                           return spawn_utc
               return None
 
-          def send_notification(boss_name, location, spawn_time_kst):
-              """OneSignal로 푸시 알림 전송"""
+          def send_notification(boss_name, location, spawn_time_kst, is_test=False):
               url = "https://api.onesignal.com/notifications"
+              title = f"⚔️ [테스트] 알림 연동 성공!" if is_test else f"⚔️ 보스 출현 {ALERT_MINUTES}분 전!"
+              body = f"GitHub Actions → OneSignal 연동 성공!\n{boss_name}" if is_test else f"{boss_name} 출현이 임박했습니다!\n📍 {location}\n⏰ {spawn_time_kst.strftime('%H:%M')} KST"
+
               payload = {
                   "app_id": APP_ID,
                   "included_segments": ["All"],
-                  "headings": {"ko": f"⚔️ 보스 출현 {ALERT_MINUTES}분 전!"},
-                  "contents": {"ko": f"{boss_name} 출현이 임박했습니다!\n📍 {location}\n⏰ 출현 시각: {spawn_time_kst.strftime('%H:%M')} (KST)"},
-                  "ios_sound": "default",
-                  "android_sound": "default",
+                  "headings": {"ko": title, "en": title},
+                  "contents": {"ko": body, "en": body},
               }
               data = json.dumps(payload).encode('utf-8')
               req = urllib.request.Request(
-                  url,
-                  data=data,
+                  url, data=data,
                   headers={
                       "Content-Type": "application/json",
                       "Authorization": f"Key {API_KEY}"
@@ -95,30 +94,39 @@ jobs:
               try:
                   with urllib.request.urlopen(req) as resp:
                       result = json.loads(resp.read())
-                      print(f"✅ 알림 전송 성공: {boss_name} → {result.get('id','')}")
+                      print(f"✅ 알림 전송 성공! ID: {result.get('id','')}, 수신자: {result.get('recipients', 0)}명")
+                      return True
               except urllib.error.HTTPError as e:
-                  print(f"❌ 알림 전송 실패: {boss_name} → {e.read().decode()}")
+                  err = e.read().decode()
+                  print(f"❌ 알림 전송 실패: {err}")
+                  return False
+              except Exception as e:
+                  print(f"❌ 오류: {e}")
+                  return False
 
-          # 메인 로직: ALERT_MINUTES분 후 출현할 보스 확인
-          alert_window_start = now_utc + timedelta(minutes=ALERT_MINUTES - 1)
-          alert_window_end   = now_utc + timedelta(minutes=ALERT_MINUTES + 1)
+          # 테스트 모드: 즉시 테스트 알림 전송
+          if TEST_MODE:
+              print("\n🧪 테스트 모드: 즉시 알림 전송")
+              send_notification("테스트 보스", "테스트 위치", now_kst, is_test=True)
+          else:
+              # 일반 모드: 출현 10분 전 체크
+              alert_window_start = now_utc + timedelta(minutes=ALERT_MINUTES - 2)
+              alert_window_end   = now_utc + timedelta(minutes=ALERT_MINUTES + 2)
+              print(f"\n알림 체크: {(alert_window_start+timedelta(hours=9)).strftime('%H:%M')}~{(alert_window_end+timedelta(hours=9)).strftime('%H:%M')} KST 출현 보스\n")
 
-          print(f"\n알림 체크 범위: {alert_window_start.strftime('%H:%M')} ~ {alert_window_end.strftime('%H:%M')} UTC")
-          print(f"({(alert_window_start + timedelta(hours=9)).strftime('%H:%M')} ~ {(alert_window_end + timedelta(hours=9)).strftime('%H:%M')} KST)\n")
+              notified = 0
+              for boss in FIXED_BOSSES:
+                  spawn_utc = get_next_spawn_utc(boss)
+                  if spawn_utc is None:
+                      continue
+                  spawn_kst = spawn_utc.astimezone(KST)
+                  diff_min = (spawn_utc - now_utc).total_seconds() / 60
+                  if alert_window_start <= spawn_utc <= alert_window_end:
+                      print(f"🔔 알림 대상: {boss['name']} ({diff_min:.0f}분 후 출현)")
+                      send_notification(boss["name"], boss["location"], spawn_kst)
+                      notified += 1
+                  else:
+                      print(f"   {boss['name']}: {diff_min:.0f}분 후 출현 ({spawn_kst.strftime('%H:%M')} KST)")
 
-          notified = 0
-          for boss in FIXED_BOSSES:
-              spawn_utc = get_next_spawn_utc(boss)
-              if spawn_utc is None:
-                  continue
-              spawn_kst = spawn_utc.astimezone(KST)
-              if alert_window_start <= spawn_utc <= alert_window_end:
-                  print(f"🔔 알림 대상: {boss['name']} (출현: {spawn_kst.strftime('%H:%M')} KST)")
-                  send_notification(boss["name"], boss["location"], spawn_kst)
-                  notified += 1
-              else:
-                  diff = (spawn_utc - now_utc).total_seconds() / 60
-                  print(f"   {boss['name']}: {diff:.0f}분 후 출현")
-
-          print(f"\n총 {notified}개 알림 전송 완료")
+              print(f"\n총 {notified}개 알림 전송")
           PYEOF
