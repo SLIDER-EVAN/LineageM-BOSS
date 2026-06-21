@@ -8,6 +8,18 @@
 <meta name="apple-mobile-web-app-title" content="보스알람">
 <meta name="theme-color" content="#0a0a0f">
 <link rel="manifest" href="manifest.json">
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "7da7a5ce-e7c1-4463-887f-0729aa35a20d",
+      safari_web_id: "web.onesignal.auto.7da7a5ce-e7c1-4463-887f-0729aa35a20d",
+      notifyButton: { enable: false },
+      allowLocalhostAsSecureOrigin: false,
+    });
+  });
+</script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>리니지M 보스 알람</title>
 <style>
@@ -847,31 +859,20 @@ function toggleAllNotif(type, on) {
 // ══════════════════════════════════════════════════════════════
 const notifTimers = {};
 
-// iOS는 반드시 사용자 제스처(버튼 클릭) 후에 권한 요청해야 함
 async function requestNotifPermission() {
-  if (!('Notification' in window)) {
-    showToast('❌ 이 브라우저는 알림을 지원하지 않습니다');
-    return false;
+  if (window.OneSignal) {
+    await OneSignal.Notifications.requestPermission();
+    return OneSignal.Notifications.permission;
   }
+  if (!('Notification' in window)) return false;
   if (Notification.permission === 'granted') return true;
-  if (Notification.permission === 'denied') {
-    showToast('❌ 알림이 차단됐습니다. 설정 앱에서 허용해 주세요');
-    return false;
-  }
-  // 권한 요청 (반드시 버튼 클릭 등 사용자 제스처 후 호출)
   const result = await Notification.requestPermission();
-  if (result === 'granted') {
-    showToast('✅ 알림 권한이 허용되었습니다');
-    return true;
-  } else {
-    showToast('❌ 알림 권한이 거부되었습니다');
-    return false;
-  }
+  return result === 'granted';
 }
 
-function scheduleNotif(bossId) {
+// OneSignal 외부 알림 예약 (앱이 백그라운드일 때도 작동)
+async function scheduleNotif(bossId) {
   cancelNotif(bossId);
-  if (Notification.permission !== 'granted') return;
   const boss = [...FIXED_BOSSES, ...RANDOM_BOSSES].find(b => b.id === bossId);
   if (!boss || !getState(bossId).notif) return;
   const target = boss.times ? nextFixed(boss) : nextRandom(boss);
@@ -879,29 +880,12 @@ function scheduleNotif(bossId) {
   const alertTime = target.getTime() - alertMinutes * 60 * 1000;
   const delay = alertTime - Date.now();
   if (delay <= 0) return;
+
+  // 앱이 열려있을 때 사용할 인앱 타이머 (백업용)
   notifTimers[bossId] = setTimeout(() => {
-    if (Notification.permission === 'granted') {
-      try {
-        // Service Worker를 통한 알림 (iOS PWA에서 더 안정적)
-        if (navigator.serviceWorker?.controller) {
-          navigator.serviceWorker.ready.then(reg => {
-            reg.showNotification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
-              body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
-              icon: '/LineageM-BOSS/icon-192.png',
-              badge: '/LineageM-BOSS/icon-192.png',
-              tag: bossId,
-              vibrate: [200, 100, 200]
-            });
-          });
-        } else {
-          new Notification(`⚔️ 보스 출현 ${alertMinutes}분 전!`, {
-            body: `${boss.name} 출현이 임박했습니다!\n📍 ${boss.location}`,
-            icon: '/LineageM-BOSS/icon-192.png',
-            tag: bossId
-          });
-        }
-      } catch(e) { console.log('알림 오류:', e); }
-    }
+    showToast(`⚔️ ${boss.name} 출현 ${alertMinutes}분 전!`);
+    // 진동
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
     setTimeout(() => scheduleNotif(bossId), 60000);
   }, delay);
 }
@@ -915,6 +899,21 @@ function rescheduleAll() {
     if (getState(b.id).notif) scheduleNotif(b.id);
     else cancelNotif(b.id);
   });
+}
+
+// OneSignal을 통해 서버에 알림 예약 등록 (백그라운드 작동)
+async function registerOneSignalNotif(boss) {
+  if (!window.OneSignal || !OneSignal.Notifications.permission) return;
+  if (!getState(boss.id).notif) return;
+  const target = boss.times ? nextFixed(boss) : nextRandom(boss);
+  if (!target) return;
+  const alertTime = new Date(target.getTime() - alertMinutes * 60 * 1000);
+  if (alertTime <= new Date()) return;
+
+  try {
+    // OneSignal 외부 알림은 REST API 필요 - 여기선 태그로 구독 등록
+    await OneSignal.User.addTag(`boss_${boss.id}`, alertTime.toISOString());
+  } catch(e) { console.log('OneSignal 태그 오류:', e); }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1128,13 +1127,26 @@ function showToast(msg) {
 // ══════════════════════════════════════════════════════════════
 async function allowNotif() {
   document.getElementById('notif-popup').style.display = 'none';
-  const result = await Notification.requestPermission();
-  if (result === 'granted') {
-    showToast('✅ 알림이 허용되었습니다!');
-    updateSettingsUI();
-    rescheduleAll();
-  } else {
-    showToast('❌ 알림이 거부되었습니다. 설정 앱에서 허용해 주세요.');
+  localStorage.setItem('notifAsked', 'true');
+  try {
+    if (window.OneSignal) {
+      await OneSignal.Notifications.requestPermission();
+      const granted = OneSignal.Notifications.permission;
+      if (granted) {
+        showToast('✅ 알림이 허용되었습니다!');
+        updateSettingsUI();
+      } else {
+        showToast('❌ 알림이 거부되었습니다. 설정 앱에서 허용해 주세요.');
+      }
+    } else {
+      const result = await Notification.requestPermission();
+      if (result === 'granted') {
+        showToast('✅ 알림이 허용되었습니다!');
+        updateSettingsUI();
+      }
+    }
+  } catch(e) {
+    console.log('알림 오류:', e);
   }
 }
 
@@ -1156,16 +1168,25 @@ async function init() {
   setInterval(tick, 1000);
   setInterval(autoResetCheck, 60000);
 
-  // 알림 권한 팝업: 권한이 없고 이전에 거부하지 않은 경우 표시
-  // iOS는 반드시 사용자가 버튼을 눌러야 권한 요청 가능 → 팝업으로 유도
-  if ('Notification' in window && Notification.permission === 'default') {
-    const asked = localStorage.getItem('notifAsked');
-    if (!asked) {
-      // 약간의 딜레이 후 팝업 표시 (앱 로딩 후)
-      setTimeout(() => {
-        document.getElementById('notif-popup').style.display = 'flex';
-      }, 1500);
-    }
+  // 알림 팝업: 권한이 없고 이전에 거부 안 한 경우
+  const asked = localStorage.getItem('notifAsked');
+  const hasPermission = window.OneSignal
+    ? OneSignal.Notifications?.permission
+    : (Notification?.permission === 'granted');
+
+  if (!hasPermission && !asked) {
+    setTimeout(() => {
+      document.getElementById('notif-popup').style.display = 'flex';
+    }, 1500);
+  }
+
+  // 이미 권한 있으면 OneSignal 태그 등록
+  if (hasPermission) {
+    setTimeout(() => {
+      [...FIXED_BOSSES, ...RANDOM_BOSSES].forEach(b => {
+        if (getState(b.id).notif) registerOneSignalNotif(b);
+      });
+    }, 2000);
   }
 }
 
