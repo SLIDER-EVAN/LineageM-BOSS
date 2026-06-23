@@ -76,7 +76,7 @@
     background: rgba(10,10,15,0.95);
     backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border);
-    padding: 14px 16px 10px;
+    padding: calc(env(safe-area-inset-top, 14px) + 14px) 16px 10px;
   }
   .header h1 {
     font-size: 22px; font-weight: 700;
@@ -144,22 +144,28 @@
 
   /* ── 알림 & 액션 버튼 ── */
   .card-actions {
-    display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;
+    display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end;
+    align-items: center;
   }
   .icon-btn {
-    width: 28px; height: 24px; border-radius: 6px;
-    border: none; cursor: pointer; font-size: 12px;
+    width: 44px; height: 40px; border-radius: 10px;
+    border: none; cursor: pointer; font-size: 20px;
     display: flex; align-items: center; justify-content: center;
-    transition: opacity .15s;
+    transition: all .15s;
   }
-  .icon-btn:active { opacity: .7; }
+  .icon-btn:active { opacity: .7; transform: scale(0.93); }
   .bell-btn { background: var(--orange-dim); color: var(--orange); }
   .bell-btn.off { background: var(--surface2); color: var(--text2); }
-  .kill-btn { background: var(--red-dim); color: var(--red); }
-  .reset-btn { background: var(--surface2); color: var(--text2); }
+  .kill-btn { background: var(--red-dim); color: var(--red); font-size:22px; width:48px; height:44px; }
+  .reset-btn { background: var(--surface2); color: var(--text2); font-size:18px; }
 
   .kill-time {
     font-size: 11px; color: var(--orange); margin-top: 3px;
+  }
+  .weekday-badge {
+    display: inline-block; font-size: 10px;
+    background: rgba(52,152,219,0.2); color: #3498db;
+    border-radius: 4px; padding: 1px 5px; margin-top: 2px;
   }
 
   /* ── 상세 패널 ── */
@@ -686,7 +692,11 @@ function nextRandom(boss) {
 
 function remaining(boss) {
   const target = boss.times ? nextFixed(boss) : nextRandom(boss);
-  if (!target) return boss.times ? '--:--:--' : '처치 미등록';
+  if (!target) {
+    if (boss.times) return '--:--:--';
+    const s = getState(boss.id);
+    return s.notif ? '대기중...' : '--:--';
+  }
   const diff = Math.floor((target - Date.now()) / 1000);
   if (diff <= 0) return '출현!';
   const h = Math.floor(diff / 3600);
@@ -724,22 +734,23 @@ function bossCard(boss, isRandom) {
   const notifOn = s.notif;
   const hasKill = !!s.killTime;
 
+  const isWeekdayOnly = !isRandom && boss.weekdays && boss.weekdays.length > 0;
+
   return `<div class="boss-card${imm?' imminent':''}" id="card-${boss.id}">
     <div class="card-main" onclick="openDetail('${boss.id}','${isRandom?'random':'fixed'}')">
       ${weaknessEl(boss.weakness)}
       <div class="card-info">
         <div class="card-name">${boss.name} ${boss.level!=='-'?`<span class="card-level">Lv.${boss.level}</span>`:''}</div>
         <div class="card-loc">${boss.location}</div>
+        ${isWeekdayOnly ? '<div class="weekday-badge">📅 평일만 출현</div>' : ''}
         ${isRandom && hasKill ? `<div class="kill-time">⏱ 처치: ${new Date(s.killTime).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})}</div>` : ''}
       </div>
       <div class="card-right">
         <div class="timer${rem==='출현!'?' spawned':''}" id="timer-${boss.id}">${rem}</div>
         <div class="card-actions" onclick="event.stopPropagation()">
-          <button class="icon-btn bell-btn${notifOn?'':' off'}" id="bell-${boss.id}" onclick="toggleNotif('${boss.id}')" title="${notifOn?'알림 끄기':'알림 켜기'}">
-            ${notifOn?'🔔':'🔕'}
-          </button>
-          ${isRandom?`<button class="icon-btn kill-btn" onclick="openSheet('${boss.id}')" title="처치 등록">⚔️</button>`:''}
-          ${isRandom&&hasKill?`<button class="icon-btn reset-btn" onclick="resetKill('${boss.id}')" title="리셋">↺</button>`:''}
+          <button class="icon-btn bell-btn${notifOn?'':' off'}" id="bell-${boss.id}" onclick="toggleNotif('${boss.id}')">${notifOn?'🔔':'🔕'}</button>
+          ${isRandom?`<button class="icon-btn kill-btn" onclick="openSheet('${boss.id}')">⚔️</button>`:''}
+          ${isRandom&&hasKill?`<button class="icon-btn reset-btn" onclick="resetKill('${boss.id}')">↺</button>`:''}
         </div>
       </div>
     </div>
@@ -987,12 +998,26 @@ function resetAllKills() {
 function autoResetCheck() {
   RANDOM_BOSSES.forEach(b => {
     const s = getState(b.id);
-    if (!s.killTime || !b.interval) return;
-    const expected = s.killTime + b.interval * 1000;
-    const grace = 30 * 60 * 1000;
-    if (Date.now() > expected + grace) {
-      setState(b.id, { killTime: null });
-      cancelNotif(b.id);
+    if (!b.interval) return;
+
+    if (s.killTime) {
+      const expected = s.killTime + b.interval * 1000;
+      const grace = 30 * 60 * 1000; // 출현 후 30분 유예
+
+      if (Date.now() > expected + grace) {
+        if (s.notif) {
+          // 알림 ON: 예상 출현 시간을 새 처치 시간으로 → 다음 리젠 주기 자동 시작
+          setState(b.id, { killTime: expected });
+          scheduleNotif(b.id);
+        } else {
+          setState(b.id, { killTime: null });
+          cancelNotif(b.id);
+        }
+      }
+    } else if (s.notif) {
+      // 처치시간 미등록 + 알림 ON → 지금부터 리젠 주기 시작
+      setState(b.id, { killTime: Date.now() });
+      scheduleNotif(b.id);
     }
   });
 }
